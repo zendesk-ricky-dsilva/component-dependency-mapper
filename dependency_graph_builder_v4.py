@@ -10,6 +10,7 @@ CEREBRO_API_KEY = os.getenv("CEREBRO_API_KEY", None)
 HEADERS = {
     "Authorization": f"Token {CEREBRO_API_KEY}"
 }
+WILDCARD = "*"
 
 def save_to_json(file_path, dictionary):
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -18,10 +19,13 @@ def save_to_json(file_path, dictionary):
 
 def filter_projects(projects: dict, product_filter: str, category_filter: str):
     # Filter projects by product and category
-    filtered_projects = [project for project in projects if any(product for product in project.get('product_names') if product.lower() in product_filter.lower()) and 
-                         (project.get('category','').lower() in category_filter.lower() or not project.get('category'))] # We still want to return projects that are not categorized (naughty, naughty!)
+    
+    filtered_projects = [
+        project for project in projects if (product_filter != WILDCARD and any(product for product in project.get('product_names') if product.lower() in product_filter.lower())) and 
+        (category_filter != WILDCARD and project.get('category','').lower() in category_filter.lower() or not project.get('category')) # We still want to return projects that are not categorized (naughty, naughty!)
+    ] 
 
-    return filtered_projects
+    return filtered_projects if any(filtered_projects) else projects
 
 def fetch_projects_from_cerebro():
     url = "https://cerebro.zende.sk/projects.json"
