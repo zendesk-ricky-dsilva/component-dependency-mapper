@@ -12,15 +12,21 @@ This project requires a Cerbero API Key and extracts the key from `CEREBRO_API_K
 
 # How to run
 
-`dependency_graph_builder_v4.py` takes the following command line arguments:
+`dependency_graph_builder.py` takes the following command line arguments:
 - `--product_filter` - Filter projects by Product(s). Example: Foundation
 - `--category_filter` - Filter projects by Categories(s). Example: Infrastructure,Service
-- `--project_filter` - Determines which project you want to build the dependency graph for. Filters on project permalink. Example: fdn-inerface-ui
+- `--project_filter` - Determines which project you want to build the dependency graph for. Filters on project permalink. Example: kubernetes
 - `--graph_type` - Determines the type of dependency to graph to build. Expected values are: uses or usedby
-- `--export_all_data` - Determines if all data (filtered by product and category) is to be exported to JSON. Default is 'N'
 - `--max_depth` - Determines the maximum depth to build dependencies for a given project. Defaults to 2
+- `--export_to_json` - Determines if dependency data is to be exported to JSON. Default is 'N'
+- `--export_to_plain_english` - Determines if dependency data is to be formatted in "plain english" and exported to a TXT file. Default is 'N'
 
-Example:
+Examples:
 
-```python3 dependency_graph_builder_v4.py --product_filter="Foundation" --category_filter="Unknown,Infrastructure,Internal Tool,Library,External Service,Service" --project_filter=fdn-interface-ui --graph_type=uses --export_all_data=N --max_depth=3```
+Render a uses dependency graph for the kubernetes project:
+```python3 dependency_graph_builder.py --product_filter="Foundation" --category_filter="Unknown,Infrastructure,Internal Tool,Library,External Service,Service" --project_filter=kubernetes --graph_type=uses --max_depth=3```
+
+
+Render a uses dependency graph for the kubernetes project and export all data formatted from Cerebro to JSON and TXT
+```python3 dependency_graph_builder.py --project_filter=kubernetes --graph_type=uses --max_depth=3 --export_to_json=Y --export_to_plain_english=Y```
 

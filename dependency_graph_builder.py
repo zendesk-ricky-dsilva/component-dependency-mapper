@@ -4,25 +4,61 @@ import os
 
 import graphviz
 import requests
+import re
 
 # Get Cerebro API key from environment variable
 CEREBRO_API_KEY = os.getenv("CEREBRO_API_KEY", None)
 HEADERS = {
     "Authorization": f"Token {CEREBRO_API_KEY}"
 }
-WILDCARD = "*"
 
-def save_to_json(file_path, dictionary):
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, 'w', encoding='utf-8') as json_file:
-        json.dump(dictionary, json_file, indent=4)
+def save_to_json(filename, project_data):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    with open(filename, 'w', encoding='utf-8') as json_file:
+        json.dump(project_data, json_file, indent=4)
+
+def save_to_plain_english_txt(filename, project_data):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    string_output = []
+    for project in project_data:
+        # Sanitize data
+        project_name = " ".join(re.sub('[-_]', ' ', project.get('name')).split())
+        project_owner = project.get('owner', 'Unknown')
+        project_products = ','.join(project.get('products')) if any(project.get('products')) else 'Unknown'
+        
+        # Write project details to a line in string_ouput
+        string_output.append(f"The project \"{project_name}\" comes under the following product(s): \"{project_products}\" and is owned by the \"{project_owner}\" team.")
+        
+        if any(project.get('uses')):
+            for project_dependency in project.get('uses'):
+                project_dependency_name = " ".join(re.sub('[-_]', ' ', project_dependency.get('name')).split())
+                project_dependency_owner = project_dependency.get('owner', 'Unknown')
+                project_dependency_products = ','.join(project_dependency.get('products')) if any(project_dependency.get('products')) else 'Unknown'
+                
+                
+                string_output.append(f"The project \"{project_name}\" depends on \"{project_dependency_name}\". \"{project_dependency_name}\" comes under the following product(s): \"{project_dependency_products}\" and is owned by the \"{project_dependency_owner}\" team.")
+        
+        if any(project.get('used_by')):
+            for project_dependent in project.get('uses'):
+                project_dependent_name = " ".join(re.sub('[-_]', ' ', project_dependent.get('name')).split())
+                project_dependent_owner = project_dependent.get('owner', 'Unknown')
+                project_dependent_products = ','.join(project_dependent.get('products')) if any(project_dependent.get('products')) else 'Unknown'
+                
+                string_output.append(f"The project \"{project_name}\" is dependent on by \"{project_dependent_name}\". \"{project_dependent_name}\" comes under the following product(s): \"{project_dependent_products}\" and is owned by the \"{project_dependent_owner}\" team.")
+                
+    with open(filename, 'w') as txt_file:
+        for line in string_output:
+            txt_file.write(f"{line}\n")
 
 def filter_projects(projects: dict, product_filter: str, category_filter: str):
-    # Filter projects by product and category
+    # Check if we're using wildcards for product AND category filter
+    if product_filter is None and category_filter is None:
+        return projects
     
+    # Filter projects by product and category
     filtered_projects = [
-        project for project in projects if (product_filter != WILDCARD and any(product for product in project.get('product_names') if product.lower() in product_filter.lower())) and 
-        (category_filter != WILDCARD and project.get('category','').lower() in category_filter.lower() or not project.get('category')) # We still want to return projects that are not categorized (naughty, naughty!)
+        project for project in projects if (product_filter and any(product for product in project.get('product_names') if product.lower() in product_filter.lower())) and 
+        (category_filter and project.get('category','').lower() in category_filter.lower() or not project.get('category')) # We still want to return projects that are not categorized (naughty, naughty!)
     ] 
 
     return filtered_projects if any(filtered_projects) else projects
@@ -102,16 +138,18 @@ def main(input_args):
     category_filter = input_args.category_filter
     project_filter = input_args.project_filter
     graph_type = input_args.graph_type
-    export_all_data = input_args.export_all_data if input_args.export_all_data else 'N'
     max_depth = input_args.max_depth if input_args.max_depth else 2
+    export_to_json = input_args.export_to_json if input_args.export_to_json else 'N'
+    export_to_plain_english = input_args.export_to_plain_english if input_args.export_to_plain_english else 'N'
 
     # I'm telling you what arguments you set...
     print(f"--product_filter set to: {product_filter}")
     print(f"--category_filter set to: {category_filter}")
     print(f"--project_filter set to: {project_filter}")
     print(f"--graph_type set to: {graph_type}")
-    print(f"--export_all_data set to: {export_all_data}")
     print(f"--max_depth set to: {max_depth}")
+    print(f"--export_to_json set to: {export_to_json}")
+    print(f"--export_to_plain_english set to: {export_to_plain_english}")    
 
     # Validate cerebro API key
     if CEREBRO_API_KEY is None:
@@ -120,24 +158,26 @@ def main(input_args):
     # Fetch project and their dependencies from Cerebro
     projects, project_dependencies = fetch_projects_from_cerebro()
 
-    # Filter projects by product_filter and category_filter tags
-    filtered_projects = filter_projects(projects, product_filter, category_filter)
+    # Filter raw data from Cerebro by product_filter and category_filter
+    filtered_raw_data = filter_projects(projects, product_filter, category_filter)
 
     # Iterate through each project and build the final data set (this isn't even my final form yet!)
-    for filtered_project in filtered_projects:
+    for filtered_record in filtered_raw_data:
         final_data_record = {
-            "id": filtered_project.get('id'),
-            "permalink": filtered_project.get('permalink'),
-            "owner": filtered_project.get('project_stakeholder_owner_name'),
-            "products": filtered_project.get('product_names'),
-            "weighting": len(filtered_project.get('dependent_project_dependencies_ids')),
+            "id": filtered_record.get('id'),
+            "permalink": filtered_record.get('permalink'),
+            "name": filtered_record.get('name'),
+            "alias": filtered_record.get('nickname'),
+            "owner": filtered_record.get('project_stakeholder_owner_name'),
+            "products": filtered_record.get('product_names'),
+            "weighting": len(filtered_record.get('dependent_project_dependencies_ids')),
             "uses": [],
             "used_by": []
         }
 
         # Populate project dependencies
-        if any(filtered_project.get('dependent_project_dependencies_ids')):
-            for dependent_project_dependencies_id in filtered_project.get('dependent_project_dependencies_ids'):
+        if any(filtered_record.get('dependent_project_dependencies_ids')):
+            for dependent_project_dependencies_id in filtered_record.get('dependent_project_dependencies_ids'):
                 dependency_project = [project_dependency for project_dependency in project_dependencies if project_dependency.get('id') == dependent_project_dependencies_id]
                 if any(dependency_project):
                     # Get dependency project record to get dependency info (we're only interested in dependencies that match the filter criteria)
@@ -148,13 +188,16 @@ def main(input_args):
                         final_data_record["uses"].append({
                             "id": project_dependency_record[0].get('id'),
                             "permalink": project_dependency_record[0].get('permalink'),
+                            "name": project_dependency_record[0].get('name'),
+                            "alias": project_dependency_record[0].get('nickname'),
                             "owner": project_dependency_record[0].get('project_stakeholder_owner_name'),
+                            "products": project_dependency_record[0].get('product_names'),
                             "weighting": len(project_dependency_record[0].get('dependent_project_dependencies_ids'))
                         })
         
         # Populate project dependents
-        if any(filtered_project.get('providing_project_dependencies_ids')):
-            for providing_project_dependencies_id in filtered_project.get('providing_project_dependencies_ids'):
+        if any(filtered_record.get('providing_project_dependencies_ids')):
+            for providing_project_dependencies_id in filtered_record.get('providing_project_dependencies_ids'):
                 dependent_project = [project_dependency for project_dependency in project_dependencies if project_dependency.get('id') == providing_project_dependencies_id]
                 if any(dependent_project):
                     # Get dependent project record to get dependency info (we're only interested in dependencies that match the filter criteria)
@@ -165,27 +208,39 @@ def main(input_args):
                         final_data_record["used_by"].append({
                             "id": project_dependent_record[0].get('id'),
                             "permalink": project_dependent_record[0].get('permalink'),
+                            "name": project_dependent_record[0].get('name'),
+                            "alias": project_dependent_record[0].get('nickname'),
                             "owner": project_dependent_record[0].get('project_stakeholder_owner_name'),
+                            "products": project_dependent_record[0].get('product_names'),
                             "weighting": len(project_dependent_record[0].get('dependent_project_dependencies_ids'))
                         })
 
         final_data_set.append(final_data_record)
 
-    if len(final_data_set) > 0:
-        # Sort data set by weighting
-        final_data_set = sorted(final_data_set, key=lambda x: x['weighting'])        
+    if any(final_data_set):
+        pdf_file_name = ''
+        output_file_name = ''
 
+        # Set PDF and Output file names 
+        if project_filter:
+            pdf_file_name = f'./renders/{project_filter}/{graph_type}-dependency-graph'
+            output_file_name = f'./data/{project_filter}/project-dependency'
+        else:
+            pdf_file_name = f'./renders/{graph_type}-dependency-graph'
+            output_file_name = f'./data/project-dependency'
+
+        if export_to_json == 'Y':
+            # Write dependency data to a JSON file
+            save_to_json(filename=f"{output_file_name}.json", project_data=final_data_set)
+
+        if export_to_plain_english == 'Y':
+            # Format dependency data in "plain english" and write to a TXT file
+            save_to_plain_english_txt(filename=f"{output_file_name}.txt", project_data=final_data_set)
+                        
         # Filter projects by project_filter
-        filtered_projects = [prj for prj in final_data_set if prj['permalink'] == project_filter]
+        filtered_projects = [prj for prj in final_data_set if prj['permalink'] == project_filter or project_filter is None]
 
-        if len(filtered_projects) > 0:        
-            # Write all project dependency data filtered by product and category to JSON file depending on export_all_data flag
-            if export_all_data == 'Y':
-                save_to_json(f'./data/{product_filter}/project-dependency.json', final_data_set)
-
-            # Write project dependency data filtered by product, category & project to JSON file
-            save_to_json(f'./data/{project_filter}/project-dependency.json', filtered_projects)
-                
+        if any(filtered_projects):                
             # Initialize and configure Graphviz directed graph
             dot = graphviz.Digraph(name='Component Dependency Graph', strict=True, format='pdf', graph_attr={'rankdir':'LR'}, 
                                    node_attr={'shape':'rectangle','arrowhead':'normal','arrowsize':'0.5','fontname':'Arial','fontsize':'11','style':'filled','color':'lightblue'})
@@ -197,11 +252,11 @@ def main(input_args):
             # Do the thing I was created to do! [0_o]
             build_dependency_graph(dot, added_nodes, added_edges, project_list=final_data_set, source_project_nodes=filtered_projects, graph_type=graph_type,
                                 max_depth=max_depth, depth=0)
+            
+            # Generate and save the graph to file
+            dot.render(filename=pdf_file_name, view=True)
 
-            # Generate and save the graph to ./renders folder
-            output_file = f'./renders/{project_filter}-{graph_type}-dependency-graph'
-            dot.render(filename=output_file, view=True)
-            print(f"Dependency graph saved to {output_file}.pdf")
+            print(f"Dependency graph saved to {pdf_file_name}.pdf")
         else:
             print("No projects found that match project filter.")
     else:
@@ -216,12 +271,13 @@ def validate_graph_type(graph_type):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a dependency graph of Projects")
 
-    parser.add_argument('--product_filter', required=True, type=str, help='Filter projects by Product(s). Example: Foundation')
-    parser.add_argument('--category_filter', required=True, type=str, help='Filter projects by Categories(s). Example: Infrastructure,Service')
-    parser.add_argument('--project_filter', required=True, type=str, help='Determines which project you want to build the dependency graph for. Filters on project permalink. Example: sfn-kubernetes')
+    parser.add_argument('--product_filter', required=False, type=str, help='Filter projects by Product(s). Example: Foundation')
+    parser.add_argument('--category_filter', required=False, type=str, help='Filter projects by Categories(s). Example: Infrastructure,Service')
+    parser.add_argument('--project_filter', required=False, type=str, help='Determines which project you want to build the dependency graph for. Filters on project permalink. Example: kubernetes')
     parser.add_argument('--graph_type', required=True, type=validate_graph_type, help='Determines the type of dependency to graph to build. Expected values are: uses or usedby')
-    parser.add_argument('--export_all_data', type=str, help='Determines if all data (filtered by product and category) is to be exported to JSON. Default is N')
-    parser.add_argument('--max_depth', type=int, help='Determines the maximum depth to build dependencies for a given project. Defaults to 2')
+    parser.add_argument('--max_depth', required=True, type=int, help='Determines the maximum depth to build dependencies for a given project. Defaults to 2')
+    parser.add_argument('--export_to_json', required=False, type=str, help='Determines if dependency data is to be exported to JSON. Default is N')
+    parser.add_argument('--export_to_plain_english', required=False, type=str, help='Determines if dependency data is to be formatted in "plain english" and exported to a TXT file. Default is N')
 
     args = parser.parse_args()
 
