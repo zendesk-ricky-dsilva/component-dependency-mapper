@@ -25,26 +25,31 @@ def save_to_plain_english_txt(filename, project_data):
         project_name = " ".join(re.sub('[-_]', ' ', project.get('name')).split())
         project_owner = project.get('owner', 'Unknown')
         project_products = ','.join(project.get('products')) if any(project.get('products')) else 'Unknown'
+        project_tier = project.get('tier')
         
         # Write project details to a line in string_ouput
-        string_output.append(f"The project \"{project_name}\" comes under the following product(s): \"{project_products}\" and is owned by the \"{project_owner}\" team.")
+        string_output.append(f"The project {project_name} is a {project_tier} project.")
+        string_output.append(f"{project_name} comes under the following product(s): {project_products}. This project is owned by the {project_owner} team.")
         
         if any(project.get('uses')):
             for project_dependency in project.get('uses'):
                 project_dependency_name = " ".join(re.sub('[-_]', ' ', project_dependency.get('name')).split())
                 project_dependency_owner = project_dependency.get('owner', 'Unknown')
                 project_dependency_products = ','.join(project_dependency.get('products')) if any(project_dependency.get('products')) else 'Unknown'
+                project_dependency_tier = project_dependency.get('tier')
                 
-                
-                string_output.append(f"The project \"{project_name}\" depends on \"{project_dependency_name}\". \"{project_dependency_name}\" comes under the following product(s): \"{project_dependency_products}\" and is owned by the \"{project_dependency_owner}\" team.")
+                string_output.append(f"The project {project_name} depends on {project_dependency_name}.")
+                string_output.append(f"{project_dependency_name} is a {project_dependency_tier} project that comes under the following product(s): {project_dependency_products} and is owned by the {project_dependency_owner} team.")
         
         if any(project.get('used_by')):
             for project_dependent in project.get('uses'):
                 project_dependent_name = " ".join(re.sub('[-_]', ' ', project_dependent.get('name')).split())
                 project_dependent_owner = project_dependent.get('owner', 'Unknown')
                 project_dependent_products = ','.join(project_dependent.get('products')) if any(project_dependent.get('products')) else 'Unknown'
+                project_dependent_tier = project_dependent.get('tier')
                 
-                string_output.append(f"The project \"{project_name}\" is dependent on by \"{project_dependent_name}\". \"{project_dependent_name}\" comes under the following product(s): \"{project_dependent_products}\" and is owned by the \"{project_dependent_owner}\" team.")
+                string_output.append(f"The project {project_name} is dependent on by {project_dependent_name}.")
+                string_output.append(f"{project_dependent_name} is a {project_dependent_tier} project that comes under the following product(s): {project_dependent_products} and is owned by the {project_dependent_owner} team.")
                 
     with open(filename, 'w') as txt_file:
         for line in string_output:
@@ -169,6 +174,7 @@ def main(input_args):
             "name": filtered_record.get('name'),
             "alias": filtered_record.get('nickname'),
             "owner": filtered_record.get('project_stakeholder_owner_name'),
+            "tier": filtered_record.get('criticality_tier'),
             "products": filtered_record.get('product_names'),
             "weighting": len(filtered_record.get('dependent_project_dependencies_ids')),
             "uses": [],
@@ -191,6 +197,7 @@ def main(input_args):
                             "name": project_dependency_record[0].get('name'),
                             "alias": project_dependency_record[0].get('nickname'),
                             "owner": project_dependency_record[0].get('project_stakeholder_owner_name'),
+                            "tier": project_dependency_record[0].get('criticality_tier'),
                             "products": project_dependency_record[0].get('product_names'),
                             "weighting": len(project_dependency_record[0].get('dependent_project_dependencies_ids'))
                         })
@@ -211,6 +218,7 @@ def main(input_args):
                             "name": project_dependent_record[0].get('name'),
                             "alias": project_dependent_record[0].get('nickname'),
                             "owner": project_dependent_record[0].get('project_stakeholder_owner_name'),
+                            "tier": project_dependent_record[0].get('criticality_tier'),
                             "products": project_dependent_record[0].get('product_names'),
                             "weighting": len(project_dependent_record[0].get('dependent_project_dependencies_ids'))
                         })
@@ -262,7 +270,7 @@ def main(input_args):
     else:
         print("No projects found that match product or category criteria.")
         
-# You can only choose the path I've laid for you...mwahahaha!
+# You can only choose the path that I have laid for you...mwahahaha!
 def validate_graph_type(graph_type):
     if graph_type not in ['uses', 'usedby']:
         raise argparse.ArgumentTypeError(f"Invalid graph type: {graph_type}. Please enter either 'uses' or 'usedby'.")
