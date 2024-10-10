@@ -17,6 +17,24 @@ def save_to_json(filename, project_data):
     with open(filename, 'w', encoding='utf-8') as json_file:
         json.dump(project_data, json_file, indent=4)
 
+def remove_urls_from_text(text, replacement_text="<URL REDACTED>"):
+    url_pattern = re.compile(r'https?://\S+|www\.\S+')
+    urls = url_pattern.findall(text)
+
+    for url in urls:
+        text = text.replace(url, replacement_text)
+
+    return text
+
+def strip_html_from_text(text):
+    html_pattern = re.compile(r'<[^>]+>')
+    html_tags = html_pattern.findall(text)
+
+    for html_tag in html_tags:
+        text = text.replace(html_tag, '')
+
+    return text
+
 def save_to_plain_english_txt(filename, project_data):
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     string_output = []
@@ -26,9 +44,25 @@ def save_to_plain_english_txt(filename, project_data):
         project_owner = project.get('owner', 'Unknown')
         project_products = ','.join(project.get('products')) if any(project.get('products')) else 'Unknown'
         project_tier = project.get('tier')
-        
-        # Write project details to a line in string_ouput
+
+        # Some project descriptions have html in it - this function strips the html from the description
+        project_desc = strip_html_from_text(project.get('description'))
+
+        # Some project descriptions have a url linked to github repos or confluence pages - this function replaces the urls with <URL REDACTED>
+        project_desc = remove_urls_from_text(project_desc)
+
+        # Write project details to a new line
         string_output.append(f"The project {project_name} is a {project_tier} project.")
+
+        # Some project descriptions are set to: "Not provided during import (rake core_features:import:csv[file_path])", or "..." - assume this is invalid
+        invalid_descriptions = ['Not provided during import (rake core_features:import:csv[file_path])', '...']
+        if not project_desc in invalid_descriptions:
+            # Some project descriptions are the same as name or permalink - assume this is invalid as it adds no value to project details
+            if project_desc != project.get('permalink') and project_desc != project.get('name'):
+                # Write project description to a new line
+                string_output.append(f"{project_name} is described as: \"{project_desc}\"")
+
+        # Write product details of the project to a new line
         string_output.append(f"{project_name} comes under the following product(s): {project_products}. This project is owned by the {project_owner} team.")
         
         if any(project.get('uses')):
@@ -38,6 +72,7 @@ def save_to_plain_english_txt(filename, project_data):
                 project_dependency_products = ','.join(project_dependency.get('products')) if any(project_dependency.get('products')) else 'Unknown'
                 project_dependency_tier = project_dependency.get('tier')
                 
+                # Write project dependency to a new line
                 string_output.append(f"The project {project_name} depends on {project_dependency_name}.")
                 string_output.append(f"{project_dependency_name} is a {project_dependency_tier} project that comes under the following product(s): {project_dependency_products} and is owned by the {project_dependency_owner} team.")
         
@@ -48,9 +83,10 @@ def save_to_plain_english_txt(filename, project_data):
                 project_dependent_products = ','.join(project_dependent.get('products')) if any(project_dependent.get('products')) else 'Unknown'
                 project_dependent_tier = project_dependent.get('tier')
                 
+                # Write project dependents to a new line
                 string_output.append(f"The project {project_name} is dependent on by {project_dependent_name}.")
                 string_output.append(f"{project_dependent_name} is a {project_dependent_tier} project that comes under the following product(s): {project_dependent_products} and is owned by the {project_dependent_owner} team.")
-                
+              
     with open(filename, 'w') as txt_file:
         for line in string_output:
             txt_file.write(f"{line}\n")
@@ -172,6 +208,7 @@ def main(input_args):
             "id": filtered_record.get('id'),
             "permalink": filtered_record.get('permalink'),
             "name": filtered_record.get('name'),
+            "description": filtered_record.get('description'),
             "alias": filtered_record.get('nickname'),
             "owner": filtered_record.get('project_stakeholder_owner_name'),
             "tier": filtered_record.get('criticality_tier'),
@@ -195,6 +232,7 @@ def main(input_args):
                             "id": project_dependency_record[0].get('id'),
                             "permalink": project_dependency_record[0].get('permalink'),
                             "name": project_dependency_record[0].get('name'),
+                            "description": project_dependency_record[0].get('description'),
                             "alias": project_dependency_record[0].get('nickname'),
                             "owner": project_dependency_record[0].get('project_stakeholder_owner_name'),
                             "tier": project_dependency_record[0].get('criticality_tier'),
@@ -217,6 +255,7 @@ def main(input_args):
                             "permalink": project_dependent_record[0].get('permalink'),
                             "name": project_dependent_record[0].get('name'),
                             "alias": project_dependent_record[0].get('nickname'),
+                            "description": project_dependent_record[0].get('description'),
                             "owner": project_dependent_record[0].get('project_stakeholder_owner_name'),
                             "tier": project_dependent_record[0].get('criticality_tier'),
                             "products": project_dependent_record[0].get('product_names'),
