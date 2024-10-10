@@ -7,7 +7,7 @@ import requests
 import re
 
 # Get Cerebro API key from environment variable
-CEREBRO_API_KEY = os.getenv("CEREBRO_API_KEY", None)
+CEREBRO_API_KEY = os.getenv('CEREBRO_API_KEY', None)
 HEADERS = {
     "Authorization": f"Token {CEREBRO_API_KEY}"
 }
@@ -17,7 +17,7 @@ def save_to_json(filename, project_data):
     with open(filename, 'w', encoding='utf-8') as json_file:
         json.dump(project_data, json_file, indent=4)
 
-def remove_urls_from_text(text, replacement_text="<URL REDACTED>"):
+def replace_urls_in_text(text, replacement_text='<URL REDACTED>'):
     url_pattern = re.compile(r'https?://\S+|www\.\S+')
     urls = url_pattern.findall(text)
 
@@ -26,7 +26,7 @@ def remove_urls_from_text(text, replacement_text="<URL REDACTED>"):
 
     return text
 
-def strip_html_from_text(text):
+def strip_html_in_text(text):
     html_pattern = re.compile(r'<[^>]+>')
     html_tags = html_pattern.findall(text)
 
@@ -40,24 +40,32 @@ def save_to_plain_english_txt(filename, project_data):
     string_output = []
     for project in project_data:
         # Sanitize data
+        
+        # Remove hyphens and underscores if name is the same as permalink to make it easier to interpret
         project_name = " ".join(re.sub('[-_]', ' ', project.get('name')).split())
         project_owner = project.get('owner', 'Unknown')
+
+        # Split products array to comma seperated string
         project_products = ','.join(project.get('products')) if any(project.get('products')) else 'Unknown'
         project_tier = project.get('tier')
 
         # Some project descriptions have html in it - this function strips the html from the description
-        project_desc = strip_html_from_text(project.get('description'))
+        project_desc = strip_html_in_text(project.get('description'))
 
-        # Some project descriptions have a url linked to github repos or confluence pages - this function replaces the urls with <URL REDACTED>
-        project_desc = remove_urls_from_text(project_desc)
+        # Some project descriptions contain urls to github, confluence etc. - this function replaces them with <URL REDACTED>
+        project_desc = replace_urls_in_text(project_desc)
 
         # Write project details to a new line
         string_output.append(f"The project {project_name} is a {project_tier} project.")
 
-        # Some project descriptions are set to: "Not provided during import (rake core_features:import:csv[file_path])", or "..." - assume this is invalid
+        if project.get('alias'):
+            project_alias = project.get('alias')
+            string_output.append(f"This project is also known as {project_alias}.")
+
+        # Some project descriptions are set to: "Not provided during import (rake core_features:import:csv[file_path])", or "..." - assume these are invalid
         invalid_descriptions = ['Not provided during import (rake core_features:import:csv[file_path])', '...']
         if not project_desc in invalid_descriptions:
-            # Some project descriptions are the same as name or permalink - assume this is invalid as it adds no value to project details
+            # Some project descriptions are the same as name or permalink - assume this is invalid as it doesn't describe the project
             if project_desc != project.get('permalink') and project_desc != project.get('name'):
                 # Write project description to a new line
                 string_output.append(f"{project_name} is described as: \"{project_desc}\"")
@@ -68,24 +76,16 @@ def save_to_plain_english_txt(filename, project_data):
         if any(project.get('uses')):
             for project_dependency in project.get('uses'):
                 project_dependency_name = " ".join(re.sub('[-_]', ' ', project_dependency.get('name')).split())
-                project_dependency_owner = project_dependency.get('owner', 'Unknown')
-                project_dependency_products = ','.join(project_dependency.get('products')) if any(project_dependency.get('products')) else 'Unknown'
-                project_dependency_tier = project_dependency.get('tier')
                 
                 # Write project dependency to a new line
                 string_output.append(f"The project {project_name} depends on {project_dependency_name}.")
-                string_output.append(f"{project_dependency_name} is a {project_dependency_tier} project that comes under the following product(s): {project_dependency_products} and is owned by the {project_dependency_owner} team.")
         
         if any(project.get('used_by')):
             for project_dependent in project.get('uses'):
                 project_dependent_name = " ".join(re.sub('[-_]', ' ', project_dependent.get('name')).split())
-                project_dependent_owner = project_dependent.get('owner', 'Unknown')
-                project_dependent_products = ','.join(project_dependent.get('products')) if any(project_dependent.get('products')) else 'Unknown'
-                project_dependent_tier = project_dependent.get('tier')
                 
                 # Write project dependents to a new line
                 string_output.append(f"The project {project_name} is dependent on by {project_dependent_name}.")
-                string_output.append(f"{project_dependent_name} is a {project_dependent_tier} project that comes under the following product(s): {project_dependent_products} and is owned by the {project_dependent_owner} team.")
               
     with open(filename, 'w') as txt_file:
         for line in string_output:
