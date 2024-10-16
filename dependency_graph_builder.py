@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import time
 
 import graphviz
 import requests
@@ -91,18 +92,16 @@ def save_to_plain_english_txt(filename, project_data):
         for line in string_output:
             txt_file.write(f"{line}\n")
 
-def filter_projects(projects: dict, product_filter: str, category_filter: str):
-    # Check if we're using wildcards for product AND category filter
-    if product_filter is None and category_filter is None:
-        return projects
-    
-    # Filter projects by product and category
+def filter_on_product_category(projects: dict, product_filter: str, category_filter: str):
     filtered_projects = [
-        project for project in projects if (product_filter and any(product for product in project.get('product_names') if product.lower() in product_filter.lower())) and 
-        (category_filter and project.get('category','').lower() in category_filter.lower() or not project.get('category')) # We still want to return projects that are not categorized (naughty, naughty!)
-    ] 
+        project for project in projects if (
+            (product_filter and (any(product in product_filter.strip().lower() for product in project.get('product_names', []))) or len(project.get('product_names')) == 0) or 
+            (category_filter and (project.get('category', '').lower() in category_filter.strip().lower() or not project.get('category'))) or
+            (not product_filter and not category_filter)  # Return all if no filters are provided
+        )
+    ]
 
-    return filtered_projects if any(filtered_projects) else projects
+    return filtered_projects
 
 def fetch_projects_from_cerebro():
     url = "https://cerebro.zende.sk/projects.json"
@@ -172,12 +171,10 @@ def build_dependency_graph(dot, added_nodes, added_edges, project_list, source_p
             build_dependency_graph(dot, added_nodes, added_edges, project_list, source_project_nodes=project_edges, graph_type=graph_type,
                                    max_depth=max_depth, depth=depth+1)
 
-def main(input_args):
-    final_data_set = []
-    
-    product_filter = input_args.product_filter
-    category_filter = input_args.category_filter
-    project_filter = input_args.project_filter
+def main(input_args):   
+    product_filter = input_args.product_filter if input_args.product_filter else ''
+    category_filter = input_args.category_filter if input_args.category_filter else '' 
+    project_permalink = input_args.project_permalink
     graph_type = input_args.graph_type
     max_depth = input_args.max_depth if input_args.max_depth else 2
     export_to_json = input_args.export_to_json if input_args.export_to_json else 'N'
@@ -186,7 +183,7 @@ def main(input_args):
     # I'm telling you what arguments you set...
     print(f"--product_filter set to: {product_filter}")
     print(f"--category_filter set to: {category_filter}")
-    print(f"--project_filter set to: {project_filter}")
+    print(f"--project_permalink set to: {project_permalink}")
     print(f"--graph_type set to: {graph_type}")
     print(f"--max_depth set to: {max_depth}")
     print(f"--export_to_json set to: {export_to_json}")
@@ -200,9 +197,10 @@ def main(input_args):
     projects, project_dependencies = fetch_projects_from_cerebro()
 
     # Filter raw data from Cerebro by product_filter and category_filter
-    filtered_raw_data = filter_projects(projects, product_filter, category_filter)
+    filtered_raw_data = filter_on_product_category(projects, product_filter, category_filter)
 
     # Iterate through each project and build the final data set (this isn't even my final form yet!)
+    final_data_set = []
     for filtered_record in filtered_raw_data:
         final_data_record = {
             "id": filtered_record.get('id'),
@@ -224,9 +222,9 @@ def main(input_args):
                 dependency_project = [project_dependency for project_dependency in project_dependencies if project_dependency.get('id') == dependent_project_dependencies_id]
                 if any(dependency_project):
                     # Get dependency project record to get dependency info (we're only interested in dependencies that match the filter criteria)
-                    project_dependency_record = filter_projects([project for project in projects if project.get('id') == dependency_project[0].get('providing_project_id')],
-                                                                product_filter, 
-                                                                category_filter)
+                    project_dependency_record = filter_on_product_category([project for project in projects if project.get('id') == dependency_project[0].get('providing_project_id')],
+                                                                           product_filter, 
+                                                                           category_filter)
                     if any(project_dependency_record):
                         final_data_record["uses"].append({
                             "id": project_dependency_record[0].get('id'),
@@ -246,9 +244,9 @@ def main(input_args):
                 dependent_project = [project_dependency for project_dependency in project_dependencies if project_dependency.get('id') == providing_project_dependencies_id]
                 if any(dependent_project):
                     # Get dependent project record to get dependency info (we're only interested in dependencies that match the filter criteria)
-                    project_dependent_record = filter_projects([project for project in projects if project.get('id') == dependent_project[0].get('dependent_project_id')],
-                                                                product_filter, 
-                                                                category_filter)
+                    project_dependent_record = filter_on_product_category([project for project in projects if project.get('id') == dependent_project[0].get('dependent_project_id')],
+                                                                          product_filter, 
+                                                                          category_filter)
                     if any(project_dependent_record):
                         final_data_record["used_by"].append({
                             "id": project_dependent_record[0].get('id'),
@@ -265,29 +263,23 @@ def main(input_args):
         final_data_set.append(final_data_record)
 
     if any(final_data_set):
-        pdf_file_name = ''
-        output_file_name = ''
-
-        # Set PDF and Output file names 
-        if project_filter:
-            pdf_file_name = f'./renders/{project_filter}/{graph_type}-dependency-graph'
-            output_file_name = f'./data/{project_filter}/project-dependency'
-        else:
-            pdf_file_name = f'./renders/{graph_type}-dependency-graph'
-            output_file_name = f'./data/project-dependency'
+        timestamp = time.strftime("%Y-%m-%d_%H:%M:%S")
+        output_file_name = f"./data/project_dependencies"
 
         if export_to_json == 'Y':
             # Write dependency data to a JSON file
-            save_to_json(filename=f"{output_file_name}.json", project_data=final_data_set)
+            save_to_json(f"{output_file_name}_{timestamp}.json", final_data_set)
 
         if export_to_plain_english == 'Y':
             # Format dependency data in "plain english" and write to a TXT file
-            save_to_plain_english_txt(filename=f"{output_file_name}.txt", project_data=final_data_set)
+            save_to_plain_english_txt(f"{output_file_name}_{timestamp}.txt", final_data_set)
                         
-        # Filter projects by project_filter
-        filtered_projects = [prj for prj in final_data_set if prj['permalink'] == project_filter or project_filter is None]
+        # Filter projects by project_permalink to build the dependency graph
+        filtered_projects = [prj for prj in final_data_set if prj['permalink'] == project_permalink.strip()]
 
-        if any(filtered_projects):                
+        if any(filtered_projects):   
+            pdf_file_name = f'./renders/{project_permalink}/{graph_type}-dependency-graph'
+
             # Initialize and configure Graphviz directed graph
             dot = graphviz.Digraph(name='Component Dependency Graph', strict=True, format='pdf', graph_attr={'rankdir':'LR'}, 
                                    node_attr={'shape':'rectangle','arrowhead':'normal','arrowsize':'0.5','fontname':'Arial','fontsize':'11','style':'filled','color':'lightblue'})
@@ -297,15 +289,14 @@ def main(input_args):
             added_edges = set()
 
             # Do the thing I was created to do! [0_o]
-            build_dependency_graph(dot, added_nodes, added_edges, project_list=final_data_set, source_project_nodes=filtered_projects, graph_type=graph_type,
-                                max_depth=max_depth, depth=0)
+            build_dependency_graph(dot, added_nodes, added_edges, final_data_set, filtered_projects, graph_type, max_depth, 0)
             
             # Generate and save the graph to file
             dot.render(filename=pdf_file_name, view=True)
 
             print(f"Dependency graph saved to {pdf_file_name}.pdf")
         else:
-            print("No projects found that match project filter.")
+            print("No projects found that match project permalink.")
     else:
         print("No projects found that match product or category criteria.")
         
@@ -320,7 +311,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--product_filter', required=False, type=str, help='Filter projects by Product(s). Example: Foundation')
     parser.add_argument('--category_filter', required=False, type=str, help='Filter projects by Categories(s). Example: Infrastructure,Service')
-    parser.add_argument('--project_filter', required=False, type=str, help='Determines which project you want to build the dependency graph for. Filters on project permalink. Example: kubernetes')
+    parser.add_argument('--project_permalink', required=True, type=str, help='Determines which project you want to build the dependency graph for. Filters on project permalink. Example: kubernetes')
     parser.add_argument('--graph_type', required=True, type=validate_graph_type, help='Determines the type of dependency to graph to build. Expected values are: uses or usedby')
     parser.add_argument('--max_depth', required=True, type=int, help='Determines the maximum depth to build dependencies for a given project. Defaults to 2')
     parser.add_argument('--export_to_json', required=False, type=str, help='Determines if dependency data is to be exported to JSON. Default is N')
